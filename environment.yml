@@ -1,0 +1,33 @@
+name: openpi-dev
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - git
+  - ffmpeg
+  - cmake
+  - ninja
+  - pkg-config
+  - compilers
+  - libstdcxx-ng
+  - pip:
+      - datasets>=2.19.0,<4
+      - gcsfs==2025.3.0
+      - ml-dtypes==0.4.1
+      - tensorstore==0.1.74
+      - pytest>=8.3.4
+      - ruff>=0.8.6
+      - pre-commit>=4.0.1
+      - ipykernel>=6.29.5
+      - ipywidgets>=8.1.5
+      - matplotlib>=3.10.0
+      - pyarrow
+      - pyrealsense2
+      - pyzmq
+      - pynvml>=12.0.0
+      - torchcodec>=0.5,<0.6
+      - -e ./packages/openpi-client
+      - -e .
