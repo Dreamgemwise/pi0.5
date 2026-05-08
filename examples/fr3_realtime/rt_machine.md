@@ -3,6 +3,8 @@
 这个目录是原始 x86_64 版本，控制链路走 `franky-control` 直连 Franka。
 ARM/aarch64 控制机请用 `../fr3_realtime_arm`，那里走 `pylibfranka`。
 
+警告：这条 Python `franky-control` 控制链路没有做策略动作平滑，不推荐用于真机策略执行。部署优先使用 `../fr3_realtime_libfranka` 的 C++ libfranka 版本。
+
 ## 1. 建环境
 
 ```bash

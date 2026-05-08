@@ -10,6 +10,8 @@ There are two execution-side paths:
 - x86_64/franky-control: see `examples/fr3_realtime/rt_machine.md`.
 - ARM/C++ libfranka: see `examples/fr3_realtime_libfranka/rt_machine.md`.
 
+The x86_64/franky-control path does not implement action smoothing and is not recommended for real-robot policy execution. Prefer the C++ libfranka path, which includes velocity EMA and libfranka-side velocity, acceleration, and jerk limits.
+
 Commands below are run from the repo root unless stated otherwise.
 
 ## 1. Pre-flight checks

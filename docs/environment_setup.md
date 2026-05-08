@@ -10,7 +10,7 @@ You can run both sides on one machine, but for real-robot deployment it is bette
 Distinguish the data-collection RT side from the deployment RT side:
 
 - The data-collection RT side must be an x86 host. It uses the `polymetis` environment created for FrankaTeleop and runs `examples/fr3_realtime/readonly_state_publisher.py`. This path only reads Polymetis state and does not open an action port.
-- The real-robot deployment RT side runs `robot_server`, and can use either the x86/franky-control path or the ARM/C++ libfranka path.
+- The real-robot deployment RT side runs `robot_server`. The x86/franky-control path exists, but it does not implement action smoothing and is not recommended for policy execution. Prefer the C++ libfranka path for deployment.
 
 ## 1. Inference/training PC: OpenPI environment
 
@@ -48,6 +48,8 @@ cd examples/fr3_realtime
 conda env create -f environment.yml
 conda activate fr3-realtime
 ```
+
+Warning: the Python `franky-control` control path does not smooth policy actions. It is useful for legacy bring-up and debugging, but is not recommended for real-robot policy execution. Use the C++ libfranka path for deployment when possible.
 
 Check the machine architecture:
 

@@ -76,6 +76,8 @@ Choose one runtime path for the robot control machine:
 - x86_64 RT machine: [examples/fr3_realtime/rt_machine.md](examples/fr3_realtime/rt_machine.md)
 - ARM or C++ libfranka RT machine: [examples/fr3_realtime_libfranka/rt_machine.md](examples/fr3_realtime_libfranka/rt_machine.md)
 
+The Python `franky-control` path does not implement action smoothing and is not recommended for real-robot policy execution. Prefer the C++ `libfranka` path for deployment, where velocity EMA and libfranka-side motion limits are available.
+
 The runtime publishes robot state over ZMQ on port `5555` and receives action chunks on port `5556`.
 
 ## Data Collection
