@@ -1,3 +1,4 @@
+
 # Running openpi models remotely
 
 Before running the commands below, create and activate the conda environment from the repo root:
@@ -71,6 +72,7 @@ for step in range(num_steps):
 
     # Execute the actions in the environment.
     ...
+
 ```
 
 Here, the `host` and `port` arguments specify the IP address and port of the remote policy server. You can also specify these as command-line arguments to your robot code, or hard-code them in your robot codebase. The `observation` is a dictionary of observations and the prompt, following the specification of the policy inputs for the policy you are serving. We have concrete examples of how to construct this dictionary for different environments in the [simple client example](../examples/simple_client/main.py).

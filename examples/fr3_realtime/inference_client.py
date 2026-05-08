@@ -1,8 +1,8 @@
-"""FR3 实时部署：推理端（跑在你这台有 RealSense + GPU 的机器）。
+"""FR3 实时部署：推理端（跑在你这台有 ZED + GPU 的机器）。
 
 职责：
   1) ZMQ SUB 订阅 Robot PC 发来的最新 RobotState
-  2) pyrealsense2 读两路图像（front 作为 agentview，wrist 作为 left_wrist）
+  2) OpenCV/UVC 读两路 ZED 单目 RGB 图像（front 作为 agentview，wrist 作为 left_wrist）
   3) resize_with_pad -> 224×224 uint8，按 Libero 约定左右+上下翻转（如果相机视角需要）
   4) 通过 websocket 调 pi05 策略服务
   5) ZMQ PUSH 把 action chunk 发回 Robot PC（带 origin_pose 和 capture_ts）
@@ -18,7 +18,8 @@
     --robot-ip 192.168.1.10 \
     --policy-host 127.0.0.1 --policy-port 8010 \
     --prompt "pick up the red block and put it in the bowl" \
-    --front-serial 000123456789 --wrist-serial 000987654321 \
+    --front-camera /dev/video0 --wrist-camera /dev/video2 \
+    --flip-wrist \
     --display
 
 用法（推理 + 数据采集）：
@@ -53,8 +54,17 @@ from dataset_recorder import (
     DatasetRecorder,
     HotkeyListener,
 )
-from streams import RealSenseStream, RobotStateSubscriber
+from streams import ZedStream, RobotStateSubscriber
 
+
+ZED_UVC_MODES = {
+    "SVGA": (1344, 376, 60),
+    "HD720": (2560, 720, 30),
+    "HD1080": (3840, 1080, 30),
+    "HD2K": (4416, 1242, 15),
+}
+
+JOINT7_MODEL_INPUT_OFFSET_RAD = np.float32(np.pi / 4.0)
 
 # -------------------- Action pusher --------------------
 class ActionPusher:
@@ -89,10 +99,13 @@ def build_element(
         img = image_tools.resize_with_pad(img, cap.resize_size, cap.resize_size)
         return image_tools.convert_to_uint8(img)
 
+    joint_position = np.asarray(state.joint_position, dtype=np.float32).copy()
+    joint_position[6] -= JOINT7_MODEL_INPUT_OFFSET_RAD
+
     return {
         "observation/exterior_image_1_left": _prep(front_rgb, cap.flip_front),
         "observation/wrist_image_left": _prep(wrist_rgb, cap.flip_wrist),
-        "observation/joint_position": np.asarray(state.joint_position, dtype=np.float32),
+        "observation/joint_position": joint_position,
         "observation/gripper_position": np.asarray([state.gripper_position_normalized], dtype=np.float32),
         "prompt": str(prompt),
     }
@@ -105,9 +118,31 @@ def run(args: argparse.Namespace) -> None:
     sub = RobotStateSubscriber(args.robot_ip)
     pusher = ActionPusher(args.robot_ip)
 
-    logging.info("opening realsense: front=%s, wrist=%s", args.front_serial, args.wrist_serial)
-    cam_front = RealSenseStream(args.front_serial)
-    cam_wrist = RealSenseStream(args.wrist_serial)
+    logging.info(
+        "opening zed uvc: front=%s, wrist=%s, size=%dx%d, fps=%d, eye=%s",
+        args.front_camera,
+        args.wrist_camera,
+        args.camera_width,
+        args.camera_height,
+        args.camera_fps,
+        args.camera_eye,
+    )
+    cam_front = ZedStream(
+        args.front_camera,
+        width=args.camera_width,
+        height=args.camera_height,
+        fps=args.camera_fps,
+        eye=args.camera_eye,
+        fourcc=args.camera_fourcc,
+    )
+    cam_wrist = ZedStream(
+        args.wrist_camera,
+        width=args.camera_width,
+        height=args.camera_height,
+        fps=args.camera_fps,
+        eye=args.camera_eye,
+        fourcc=args.camera_fourcc,
+    )
 
     logging.info("connecting policy server @ %s:%d", args.policy_host, args.policy_port)
     policy = _wsclient.WebsocketClientPolicy(args.policy_host, args.policy_port)
@@ -136,6 +171,8 @@ def run(args: argparse.Namespace) -> None:
             task_prompt=args.prompt,
             img_size=args.resize_size,
             fps=args.record_fps,
+            flip_front=args.flip_front,
+            flip_wrist=args.flip_wrist,
         )
         recorder.attach(sub, cam_front, cam_wrist)
         recorder.start()
@@ -215,8 +252,33 @@ def main() -> None:
     ap.add_argument("--policy-host", default="127.0.0.1")
     ap.add_argument("--policy-port", type=int, default=8010)
     ap.add_argument("--prompt", required=True, help="任务描述文本")
-    ap.add_argument("--front-serial", required=True, help="front RealSense 序列号")
-    ap.add_argument("--wrist-serial", required=True, help="wrist RealSense 序列号")
+    ap.add_argument(
+        "--front-camera",
+        required=True,
+        help="front ZED UVC 源，比如 0 或 /dev/video0（exterior_image_1_left）",
+    )
+    ap.add_argument(
+        "--wrist-camera",
+        required=True,
+        help="wrist ZED UVC 源，比如 2 或 /dev/video2（wrist_image_left）",
+    )
+    ap.add_argument(
+        "--camera-mode",
+        choices=sorted(ZED_UVC_MODES),
+        default=None,
+        help="ZED UVC 预设模式；HD2K 为 4416x1242@15fps",
+    )
+    ap.add_argument("--camera-width", type=int, default=2560, help="ZED UVC 拼接帧宽度，HD720 通常为 2560")
+    ap.add_argument("--camera-height", type=int, default=720, help="ZED UVC 拼接帧高度，HD720 通常为 720")
+    ap.add_argument("--camera-fps", type=int, default=30, help="ZED 采集帧率")
+    ap.add_argument("--camera-fourcc", default="YUYV", help="OpenCV 请求的 UVC fourcc；ZED 2i UVC 通常为 YUYV")
+    ap.add_argument(
+        "--camera-eye",
+        default="LEFT",
+        type=str.upper,
+        choices=["LEFT", "RIGHT", "FULL"],
+        help="从 ZED 左右拼接帧里取左目/右目；FULL 表示不切半",
+    )
     ap.add_argument("--resize-size", type=int, default=224)
     ap.add_argument("--flip-front", action="store_true", help="如果 front 视角需要 180 翻转")
     ap.add_argument("--flip-wrist", action="store_true")
@@ -229,6 +291,8 @@ def main() -> None:
     ap.add_argument("--record-fps", type=int, default=DROID_FPS,
                     help=f"采集频率，默认 {DROID_FPS}Hz（DROID 官方）")
     args = ap.parse_args()
+    if args.camera_mode is not None:
+        args.camera_width, args.camera_height, args.camera_fps = ZED_UVC_MODES[args.camera_mode]
     run(args)
 
 

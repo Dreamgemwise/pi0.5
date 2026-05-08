@@ -1,7 +1,7 @@
 """pi05_droid fine-tune 数据采集。
 
 和 inference_client.py 跑在同一进程，借用已有的 RobotStateSubscriber 和
-RealSense 流。按 LeRobot v2.1 格式（parquet + mp4）落盘，字段名对齐
+ZED UVC 单目 RGB 流。按 LeRobot v2.1 格式（parquet + mp4）落盘，字段名对齐
 DROID（这样数据能直接喂给 openpi 训练流程）：
 
     observation.state                          (n, 8) float32
@@ -251,6 +251,8 @@ class DatasetRecorder:
         task_prompt: str,
         img_size: int = 224,
         fps: int = DROID_FPS,
+        flip_front: bool = False,
+        flip_wrist: bool = False,
     ) -> None:
         self._root = Path(root_dir)
         (self._root / "meta").mkdir(parents=True, exist_ok=True)
@@ -261,11 +263,13 @@ class DatasetRecorder:
         self._img_size = img_size
         self._fps = fps
         self._dt = 1.0 / fps
+        self._flip_front = flip_front
+        self._flip_wrist = flip_wrist
 
         # 被外部注入的数据源
         self._sub = None           # RobotStateSubscriber
-        self._cam_ext = None       # RealSenseStream (front / exterior)
-        self._cam_wrist = None     # RealSenseStream (wrist)
+        self._cam_ext = None       # ZedStream (front / exterior)
+        self._cam_wrist = None     # ZedStream (wrist)
 
         self._ep_lock = threading.Lock()
         self._episode: _Episode | None = None
@@ -489,8 +493,8 @@ class DatasetRecorder:
                         ts_mono=t0,
                         joint_position=state.joint_position.astype(np.float32).copy(),
                         gripper_width=float(state.gripper_width),
-                        img_ext=_resize_pad(ext, self._img_size),
-                        img_wrist=_resize_pad(wrist, self._img_size),
+                        img_ext=_resize_pad(_maybe_flip(ext, self._flip_front), self._img_size),
+                        img_wrist=_resize_pad(_maybe_flip(wrist, self._flip_wrist), self._img_size),
                     )
                     with self._ep_lock:
                         if self._episode is not None:
@@ -515,6 +519,10 @@ def _resize_pad(img: np.ndarray, size: int) -> np.ndarray:
         y0, x0 = (size - nh) // 2, (size - nw) // 2
         pad[y0 : y0 + nh, x0 : x0 + nw] = resized
         return pad
+
+
+def _maybe_flip(img: np.ndarray, flip: bool) -> np.ndarray:
+    return img[::-1, ::-1] if flip else img
 
 
 # =====================================================================

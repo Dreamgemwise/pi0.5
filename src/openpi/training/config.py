@@ -28,6 +28,7 @@ import openpi.training.weight_loaders as weight_loaders
 import openpi.transforms as _transforms
 
 ModelType: TypeAlias = _model.ModelType
+FR3_JOINT7_POLICY_OFFSET = np.float32(np.pi / 4.0)
 # Work around a tyro issue with using nnx.filterlib.Filter directly.
 Filter: TypeAlias = nnx.filterlib.Filter
 
@@ -446,10 +447,12 @@ class FR3Repack(_transforms.DataTransformFn):
 
     def __call__(self, data: dict) -> dict:
         state = np.asarray(data["observation.state"], dtype=np.float32)
+        joint_position = state[..., :7].copy()
+        joint_position[..., 6] -= FR3_JOINT7_POLICY_OFFSET
         out = {
             "observation/exterior_image_1_left": data["observation.images.exterior_image_1_left"],
             "observation/wrist_image_left": data["observation.images.wrist_image_left"],
-            "observation/joint_position": state[..., :7],
+            "observation/joint_position": joint_position,
             "observation/gripper_position": state[..., 7:8],
             "actions": np.asarray(data["action"], dtype=np.float32),
         }
@@ -862,7 +865,7 @@ TrainConfig(
         action_expert_variant="gemma_300m_lora", # 改:dummy -> gemma_300m_lora
     ),
     data=LeRobotFR3DataConfig(
-        repo_id="fr3_pick_block",
+        repo_id="fr3_pick_up_cup",
         base_config=DataConfig(prompt_from_task=True),
         assets=AssetsConfig(
             assets_dir="models/pi05_droid/assets",

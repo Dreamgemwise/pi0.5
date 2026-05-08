@@ -1,10 +1,18 @@
 # Data directories.
 assets/
 checkpoints/
+checkpoints_lora/
 data/
 datasets/
 models/
+tmp/
 wandb/
+
+# Local Codex/session files.
+.codex
+
+# External source clones used by local setup docs.
+examples/fr3_realtime_libfranka/libfranka-0.21.1/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

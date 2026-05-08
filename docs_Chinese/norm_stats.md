@@ -27,10 +27,10 @@ For an example of a full training config that reloads normalization statistics, 
 
 **Note #2:** Whether reloading normalization statistics is beneficial depends on the similarity of your robot and task to the robot and task distribution in the pre-training dataset. We recommend to always try both, reloading and training with a fresh set of statistics computed on your new dataset (see [main README](../README.md) for instructions on how to compute new statistics), and pick the one that works better for your task.
 
+
 ## Provided Pre-training Normalization Statistics
 
 Below is a list of all the pre-training normalization statistics we provide. We provide them for both, the `pi0_base` and `pi0_fast_base` models. For `pi0_base`, set the `assets_dir` to `gs://openpi-assets/checkpoints/pi0_base/assets` and for `pi0_fast_base`, set the `assets_dir` to `gs://openpi-assets/checkpoints/pi0_fast_base/assets`.
-
 | Robot | Description | Asset ID |
 |-------|-------------|----------|
 | ALOHA | 6-DoF dual arm robot with parallel grippers | trossen |
@@ -43,11 +43,11 @@ Below is a list of all the pre-training normalization statistics we provide. We 
 | ARX mobile | Mobile version of bi-manual ARX-5 robot arm setup mounted on a Slate base | arx_mobile |
 | Fibocom mobile | Fibocom mobile robot with 2x ARX-5 arms | fibocom_mobile |
 
+
 ## Pi0 Model Action Space Definitions
 
 Out of the box, both the `pi0_base` and `pi0_fast_base` use the following action space definitions (left and right are defined looking from behind the robot towards the workspace):
-
-```text
+```
     "dim_0:dim_5": "left arm joint angles",
     "dim_6": "left arm gripper position",
     "dim_7:dim_12": "right arm joint angles (for bi-manual only)",
@@ -62,7 +62,6 @@ The proprioceptive state uses the same definitions as the action space, except f
 For 7-DoF robots (e.g. Franka), we use the first 7 dimensions of the action space for the joint actions, and the 8th dimension for the gripper action.
 
 General info for Pi robots:
-
 - Joint angles are expressed in radians, with position zero corresponding to the zero position reported by each robot's interface library, except for ALOHA, where the standard ALOHA code uses a slightly different convention (see the [ALOHA example code](../examples/aloha_real/README.md) for details).
 - Gripper positions are in [0.0, 1.0], with 0.0 corresponding to fully open and 1.0 corresponding to fully closed.
 - Control frequencies are either 20 Hz for UR5e and Franka, and 50 Hz for ARX and Trossen (ALOHA) arms.

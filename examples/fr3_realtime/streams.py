@@ -3,44 +3,94 @@
 抽离自 inference_client.py，使 data_collector.py 能复用同一套数据源而不
 拖入 pi0.5 相关依赖（openpi_client 等）。
 
-* RealSenseStream     —— 单台 RealSense 的后台抓帧线程
+* ZedStream           —— 单台 ZED 的后台抓帧线程
 * RobotStateSubscriber —— 订阅 robot_server 的 ZMQ PUB 状态流
 """
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
 import threading
+import time
 
+import cv2
 import msgpack
 import numpy as np
 import zmq
 
-try:
-    import pyrealsense2 as rs
-except ImportError as e:  # pragma: no cover
-    raise RuntimeError(
-        "FR3 realtime scripts require `pyrealsense2`. "
-        "Install it in the active conda env with `python -m pip install pyrealsense2 pyzmq pyarrow`."
-    ) from e
-
 from common import STATE_PUB_PORT, RobotState
 
 
-class RealSenseStream:
-    """单台 RealSense 颜色流。启动后后台抓帧，主循环用 latest() 拿最新帧。"""
+def _camera_source(source: str) -> int | str:
+    return int(source) if source.isdecimal() else source
+
+
+def _video_device_path(source: str) -> str | None:
+    if source.isdecimal():
+        return f"/dev/video{source}"
+    if source.startswith("/dev/video"):
+        return source
+    return None
+
+
+def _set_v4l2_format(source: str, width: int, height: int, fps: int, fourcc: str) -> None:
+    device = _video_device_path(source)
+    if device is None or not shutil.which("v4l2-ctl"):
+        return
+    if fourcc:
+        fmt = f"width={int(width)},height={int(height)},pixelformat={fourcc.upper()}"
+    else:
+        fmt = f"width={int(width)},height={int(height)}"
+    result = subprocess.run(
+        [
+            "v4l2-ctl",
+            "-d",
+            device,
+            f"--set-fmt-video={fmt}",
+            f"--set-parm={int(fps)}",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if result.returncode != 0:
+        msg = (result.stderr or result.stdout).strip()
+        logging.warning("failed to set V4L2 format on %s: %s", device, msg)
+
+
+class ZedStream:
+    """单台 ZED UVC 彩色流。ZED UVC 帧为左右目横向拼接，这里取单目 RGB。"""
 
     def __init__(
         self,
-        serial: str,
-        width: int = 640,
-        height: int = 480,
+        source: str,
+        width: int = 2560,
+        height: int = 720,
         fps: int = 30,
+        eye: str = "LEFT",
+        fourcc: str = "YUYV",
     ) -> None:
-        self._pipe = rs.pipeline()
-        cfg = rs.config()
-        cfg.enable_device(serial)
-        cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
-        self._pipe.start(cfg)
+        self._source = str(source)
+        self._eye = eye.upper()
+        if self._eye not in {"LEFT", "RIGHT", "FULL"}:
+            raise ValueError("eye must be one of: LEFT, RIGHT, FULL")
+
+        _set_v4l2_format(self._source, width, height, fps, fourcc)
+        self._cap = cv2.VideoCapture(_camera_source(self._source), cv2.CAP_V4L2)
+        if not self._cap.isOpened():
+            self._cap = cv2.VideoCapture(_camera_source(self._source))
+        if not self._cap.isOpened():
+            raise RuntimeError(f"Failed to open ZED UVC camera source {self._source!r}")
+
+        if fourcc:
+            if len(fourcc) != 4:
+                raise ValueError("camera fourcc must be exactly 4 characters, e.g. MJPG")
+            self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc.upper()))
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(width))
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(height))
+        self._cap.set(cv2.CAP_PROP_FPS, int(fps))
+
         self._lock = threading.Lock()
         self._frame: np.ndarray | None = None
         self._stop = threading.Event()
@@ -50,16 +100,31 @@ class RealSenseStream:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
-                frames = self._pipe.wait_for_frames(timeout_ms=200)
-                color = frames.get_color_frame()
-                if color is None:
+                ok, frame = self._cap.read()
+                if not ok or frame is None:
+                    logging.debug("zed uvc frame read failed (%s)", self._source)
+                    time.sleep(0.01)
                     continue
-                # BGR -> RGB
-                img = np.asanyarray(color.get_data())[:, :, ::-1].copy()
+
+                if frame.ndim != 3 or frame.shape[2] < 3:
+                    logging.debug("zed uvc frame has unexpected shape: %s", frame.shape)
+                    continue
+
+                if self._eye == "FULL":
+                    mono = frame
+                else:
+                    half_width = frame.shape[1] // 2
+                    # ZED UVC raw frames are side-by-side as RIGHT | LEFT.
+                    if self._eye == "LEFT":
+                        mono = frame[:, half_width:]
+                    else:
+                        mono = frame[:, :half_width]
+
+                img = mono[:, :, :3][:, :, ::-1].copy()
                 with self._lock:
                     self._frame = img
             except Exception as e:  # noqa: BLE001
-                logging.debug("realsense frame timeout: %s", e)
+                logging.debug("zed uvc frame read failed (%s): %s", self._source, e)
 
     def latest(self) -> np.ndarray | None:
         with self._lock:
@@ -69,7 +134,7 @@ class RealSenseStream:
         self._stop.set()
         self._thr.join(timeout=1.0)
         try:
-            self._pipe.stop()
+            self._cap.release()
         except Exception:
             pass
 

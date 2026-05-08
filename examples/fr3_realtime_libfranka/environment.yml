@@ -1,0 +1,27 @@
+# ARM/aarch64 C++ runtime/build environment for direct libfranka control.
+#
+# This environment intentionally avoids pylibfranka/pybind. It provides:
+#   - dependencies for building libfranka C++ from source into $CONDA_PREFIX
+#   - dependencies for building the C++ ZMQ/msgpack robot bridge in this dir
+#
+# See rt_machine.md for the full build commands.
+name: fr3-realtime-libfranka
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - cmake>=3.16
+  - ninja
+  - pkg-config
+  - cxx-compiler
+  - console_bridge
+  - "eigen<4"
+  - fmt
+  - poco
+  - pinocchio
+  - tinyxml2
+  - zeromq
+  - cppzmq
+  - msgpack-cxx
+  - libgcc-ng
+  - libstdcxx-ng
