@@ -148,10 +148,11 @@ def train_step(
         model: _model.BaseModel, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions
     ):
         chunked_loss = model.compute_loss(rng, observation, actions, train=True)
-        if observation.action_loss_mask is None:
+        action_loss_mask = getattr(observation, "action_loss_mask", None)
+        if action_loss_mask is None:
             return jnp.mean(chunked_loss)
 
-        valid_steps = jnp.any(observation.action_loss_mask, axis=-1).astype(chunked_loss.dtype)
+        valid_steps = jnp.any(action_loss_mask, axis=-1).astype(chunked_loss.dtype)
         return jnp.sum(chunked_loss * valid_steps) / jnp.maximum(jnp.sum(valid_steps), 1.0)
 
     train_rng = jax.random.fold_in(rng, state.step)

@@ -21,6 +21,7 @@ import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
 import openpi.shared.download as _download
+import openpi.shared.nnx_utils as nnx_utils
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
 import openpi.training.optimizer as _optimizer
@@ -875,11 +876,14 @@ TrainConfig(
     weight_loader=weight_loaders.CheckpointWeightLoader(
         "models/pi05_droid/params"                # 改：载入本地 pi05_droid 预训练
     ),
-    freeze_filter=pi0_config.Pi0Config(            # 加：LoRA 下必须提供 freeze_filter
-        pi05=True, action_dim=32, action_horizon=16,
-        paligemma_variant="gemma_2b_lora",
-        action_expert_variant="gemma_300m_lora",
-    ).get_freeze_filter(),
+    freeze_filter=nnx.Any(                          # LoRA 小数据微调：冻结 LLM 非 LoRA 和视觉编码器
+        pi0_config.Pi0Config(
+            pi05=True, action_dim=32, action_horizon=16,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
+        nnx_utils.PathRegex(".*img.*"),
+    ),
     ema_decay=None,
     num_train_steps=200_000,    # 改：50 -> 10000
     batch_size=3,      # 2 个 device 时可直接跑通；后续再按显存上调

@@ -1,4 +1,4 @@
-"""FR3 实时部署：推理端（跑在你这台有 ZED + GPU 的机器）。
+opened"""FR3 实时部署：推理端（跑在你这台有 ZED + GPU 的机器）。
 
 职责：
   1) ZMQ SUB 订阅 Robot PC 发来的最新 RobotState
@@ -84,6 +84,8 @@ class CaptureArgs:
     resize_size: int = 224
     flip_front: bool = False          # 如果 front 相机视角上下颠倒，设为 True
     flip_wrist: bool = False
+    front_transform: str = "none"
+    wrist_transform: str = "none"
 
 
 def build_element(
@@ -93,9 +95,23 @@ def build_element(
     prompt: str,
     cap: CaptureArgs,
 ) -> dict:
-    def _prep(img: np.ndarray, flip: bool) -> np.ndarray:
-        if flip:
+    def _apply_transform(img: np.ndarray, transform: str) -> np.ndarray:
+        if transform == "none":
+            return img
+        if transform == "flip180":
             img = img[::-1, ::-1]
+        elif transform == "hflip":
+            img = img[:, ::-1]
+        elif transform == "vflip":
+            img = img[::-1, :]
+        else:
+            raise ValueError(f"unsupported image transform: {transform}")
+        return img
+
+    def _prep(img: np.ndarray, flip: bool, transform: str) -> np.ndarray:
+        if flip and transform == "none":
+            transform = "flip180"
+        img = _apply_transform(img, transform)
         img = image_tools.resize_with_pad(img, cap.resize_size, cap.resize_size)
         return image_tools.convert_to_uint8(img)
 
@@ -103,8 +119,8 @@ def build_element(
     joint_position[6] -= JOINT7_MODEL_INPUT_OFFSET_RAD
 
     return {
-        "observation/exterior_image_1_left": _prep(front_rgb, cap.flip_front),
-        "observation/wrist_image_left": _prep(wrist_rgb, cap.flip_wrist),
+        "observation/exterior_image_1_left": _prep(front_rgb, cap.flip_front, cap.front_transform),
+        "observation/wrist_image_left": _prep(wrist_rgb, cap.flip_wrist, cap.wrist_transform),
         "observation/joint_position": joint_position,
         "observation/gripper_position": np.asarray([state.gripper_position_normalized], dtype=np.float32),
         "prompt": str(prompt),
@@ -151,6 +167,8 @@ def run(args: argparse.Namespace) -> None:
         resize_size=args.resize_size,
         flip_front=args.flip_front,
         flip_wrist=args.flip_wrist,
+        front_transform=args.front_transform,
+        wrist_transform=args.wrist_transform,
     )
 
     # 等 state 和两路图都 ready
@@ -282,6 +300,8 @@ def main() -> None:
     ap.add_argument("--resize-size", type=int, default=224)
     ap.add_argument("--flip-front", action="store_true", help="如果 front 视角需要 180 翻转")
     ap.add_argument("--flip-wrist", action="store_true")
+    ap.add_argument("--front-transform", choices=("none", "flip180", "hflip", "vflip"), default="none")
+    ap.add_argument("--wrist-transform", choices=("none", "flip180", "hflip", "vflip"), default="none")
     ap.add_argument("--request-hz", type=float, default=3.0,
                     help="向策略服务请求的频率，推理耗时 ~0.3s 时 3Hz 刚好无空档")
     ap.add_argument("--display", action="store_true")
